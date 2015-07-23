@@ -1,0 +1,129 @@
+---
+title: "MachineLearningAssignment"
+author: "Ana Lira"
+date: "Thursday, July 23, 2015"
+output: html_document
+---
+
+
+```{r,warning=FALSE}
+library(caret)
+library(pROC)
+
+```
+
+#### Summary
+This machine learning algorithm tries to predict the type of exercise (quality) performed by a  subject according to different body  measures taken by monitoring devices during the activity.  
+
+The first step was to define the variables to use as predictors, for which different data cleansing and filtering steps were taken.
+
+Afterwards, different training methods and configurations were tested until a model with high accuracy and low error rate was obtained. The resulting best model has the following characteristics:
+
+1) Only numeric predictors, with no NAs and blank values were considered.
+2) The method used was "gbm", with Accuracy metric, since the value we want to predict is a classification and not a continuos range.
+3) The predicted value was changed to a numeric factor variable from 1 to 5 (instead of characters)
+4) Cross validation with 10 fold and repeated 5 times
+
+The final model had an Accuracy of 1, with and out of sample error rate of zero for the 95% confidence interval.
+
+#### Preliminary Data Analysis
+
+The input data (d) consists of 19622 samples of 160 variables.
+
+The training data was partitioned with a 75% of samples for the model training algorithm and a 25% for model testing.
+
+When performing summary(d) and str(d),  some of the first discoveries are:
+1) The value to be predicted is a factor variable (classe), with 5 possible results ("A","B","C","D","E").  The train()  function failed when trying to use character type data, and only changing it to numeric values also caused the train() function to give unexpected results (continuous values instead of categories). So, the classe values was changed to a numeric factor variable, with values from 1 to 5.
+
+2) Some columns are descriptive (user_name for example), so only numeric columns were
+included in the training dataset (filter done with sapply function).
+
+3) Some columns had most of their values with NA (more than 90%), so they were not considered as critical predictors and were also filtered from the training subset (using colSums and is.na functions)
+
+4) Some colums had most of their values with blanks, and were also taken out from the training dataset (iblanks index).  The columns filtered were:
+kurtosis_roll_belt kurtosis_picth_belt
+kurtosis_yaw_belt skewness_roll_belt skewness_roll_belt.1 skewness_yaw_belt
+max_yaw_belt    min_yaw_belt   amplitude_yaw_belt
+kurtosis_roll_arm kurtosis_picth_arm kurtosis_yaw_arm skewness_roll_arm
+skewness_pitch_arm skewness_yaw_arm 
+kurtosis_roll_dumbbell kurtosis_picth_dumbbell kurtosis_yaw_dumbbell
+skewness_roll_dumbbell skewness_pitch_dumbbell skewness_yaw_dumbbell max_yaw_dumbbell
+min_yaw_dumbbell amplitude_yaw_dumbbell
+kurtosis_roll_forearm kurtosis_picth_forearm kurtosis_yaw_forearm
+skewness_roll_forearm skewness_pitch_forearm skewness_yaw_forearm max_yaw_forearm
+min_yaw_forearm amplitude_yaw_forearm
+
+Below is the code executed to prepare the training data:
+
+```{r}
+d<-read.csv("pml-training.csv")
+test<-read.csv("pml-testing.csv")
+
+inTrain <- createDataPartition(y=d$classe,p=0.75, list=FALSE)
+training <- data.frame(d[inTrain,])
+t<-as.vector(d[inTrain,"classe"])
+training$classe<-t
+testing <- d[-inTrain,]
+
+
+training <- training[, which(as.numeric(colSums(is.na(training))) < 7000)]
+iblanks<-c(2,5,6,12:20,43:48,52:60,74:82)
+training<-training[,-iblanks]
+training$classe[training$classe=="A"]<-1
+training$classe[training$classe=="B"]<-2
+training$classe[training$classe=="C"]<-3
+training$classe[training$classe=="D"]<-4
+training$classe[training$classe=="E"]<-5
+training$classe<-as.numeric(training$classe)
+
+training$classe<-as.factor(training$classe)
+
+```
+
+### Training the model
+
+The bgm model was selected as training algorithm. 
+The variable fitControl sets the cross validation configuration to 10 fold and 5 iterations.
+
+Since the training took a long period of time, the R code executed will be copied here and the resulting model will be loaded from an RDS file:
+
+set.seed(1345)
+fitControl <- trainControl(## 10-fold CV
+  method = "repeatedcv",
+  number = 10,
+  ## repeated ten times
+  repeats = 5)
+  
+modelFit_cv_acc <- train(classe ~ ., data = training,
+                 method = "gbm",
+                 trControl = fitControl,
+                 verbose = FALSE,metric="Accuracy")
+                 
+saveRDS(modelFit_cv_acc, file="modelFit_cv_acc.rds")
+
+```{r}
+modelFit<-readRDS(file="modelFit_cv_acc.rds")
+```
+#### Testing the results  
+
+Before testing the model, we need to also transform the testing classe variable to a numeric factor:
+
+pred_cv<-predict(modelFit,newdata=testing2)
+
+```{r}
+testing$classe<-as.numeric(testing$classe)
+testing$classe[testing$classe=="A"]<-1
+testing$classe[testing$classe=="B"]<-2
+testing$classe[testing$classe=="C"]<-3
+testing$classe[testing$classe=="D"]<-4
+testing$classe[testing$classe=="E"]<-5
+testing$classe<-as.factor(testing$classe)
+```
+
+Then we use the predict function with the 25% of the original data and compare predicted with real results using the ConfusionMatrix() function.
+```{r}
+pred_cv<-predict(modelFit,newdata=testing)
+confusionMatrix(pred_cv,testing$classe)
+```
+
+So we can observe how the model predicts correctly all the samples of the testing data set, with zero error and complete accuracy (1) for all classes.
